@@ -17,6 +17,8 @@ def angle_calc(p1: list, p2: list, p3: list):
     v1 = p1 - p2
     v2 = p3 - p2
     cos_theta = (np.dot(v1, v2)) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+    cos_theta = np.clip(cos_theta, -1.0, 1.0)
+    # print("p1",p1,"p2",p2,"p3",p3,"v1",v1,"v2",v2,"Cos_theta",cos_theta)
     theta = np.arccos(cos_theta)  # angle in radians
     angle = abs(theta * 180.0 / np.pi)  # angle in degree
     if angle > 180:
@@ -25,7 +27,9 @@ def angle_calc(p1: list, p2: list, p3: list):
 
 ## Calculating 8 important angles for pose detection.
 ### This function is specific to tis code application.
-def joint_angles(joints: list):
+def joint_angles(joint: list):
+    joints = np.zeros((17, 2))
+    joints[: joint.shape[0], : joint.shape[1]] = joint
     out = []
     out.append(angle_calc(joints[9], joints[7], joints[5]))  ### Angle 1 on right side
     out.append(angle_calc(joints[10], joints[8], joints[6]))  ### Angle 2 on left
@@ -109,9 +113,29 @@ def pose(flexion_angles: list):
     if text != 0:
         final.append(text)
         text = 0
-
     return final
 
+# List of common colors in OpenCV (BGR format)
+colors = [
+    (0, 0, 255),      # Red
+    (0, 255, 0),      # Green
+    # (255, 0, 0),      # Blue
+    (0, 255, 255),    # Yellow
+    (255, 255, 0),    # Cyan
+    (255, 0, 255),    # Magenta
+    (128, 128, 128),  # Gray
+    (50, 50, 50),     # Dark Gray
+    (200, 200, 200),  # Light Gray
+    (0, 0, 128),      # Maroon
+    (0, 128, 128),    # Olive
+    (128, 0, 128),    # Purple
+    (128, 128, 0),    # Teal
+    (128, 0, 0),      # Navy
+    (0, 165, 255),    # Orange
+    (19, 69, 139),    # Brown
+    (203, 192, 255),  # Pink
+    (230, 216, 173)   # Light Blue
+]
 
 """
 Main function starts here to determine the Pose of the subject.
@@ -119,7 +143,7 @@ Main function starts here to determine the Pose of the subject.
 
 model = yolo("yolov8n-pose.pt", task="pose")  ## defining the model
 
-# cap = cv.VideoCapture("test_video2.mp4")  ## to use a video from the device
+# cap = cv.VideoCapture("test_video3.mp4")  ## to use a video from the device
 cap = cv.VideoCapture(0)  ## To capture from the webcam
 
 # Check if camera opened successfully
@@ -136,24 +160,19 @@ while cap.isOpened():
             print(diff(prev, frame))
             results = model(source=frame)
             frame1 = results[0].plot()
-            thresh += 1
+            # thresh += 1
         else:
             frame1 = results[0].plot(
                 img=frame
-            )  ## to print the annotations on the image that is not fed in the model.
+            )  ## to print the annotations on the original image without feeding it into the model.
             print(diff(prev, frame))
-            thresh -= 0.5
+            # thresh -= 0.5
         prev = frame
-        joints = np.array(results[0].keypoints.xy[0]).astype(
+        joints = np.array(results[0].keypoints.xy).astype(
             int
         )  # saving the coordinates in joints variable as int
-        joint = np.zeros((17, 2))
-        joint[: joints.shape[0], : joints.shape[1]] = joints
-        out = joint_angles(joint)
-        final = pose(out)
-        img_text = np.zeros(
-            (frame1.shape[0], frame1.shape[1] + 200, frame1.shape[2]), dtype=np.uint8
-        )
+
+        img_text = np.zeros((frame1.shape[0], frame1.shape[1] + 200, frame1.shape[2]), dtype=np.uint8)
         img_text[: frame1.shape[0], : frame1.shape[1], : frame1.shape[2]] = frame1
         cv.putText(
             img_text,
@@ -165,17 +184,33 @@ while cap.isOpened():
             thickness=1,
             lineType=cv.LINE_AA,
         )
-        for i in range(len(final)):
+        var = 1
+        for j in range(len(joints)): ### This loop ensures to detect pose for more than one persons.
+            out = joint_angles(joints[j])
+            final = pose(out) ### text variable containg the pose names.
             cv.putText(
-                img_text,
-                text=final[i],
-                org=(frame1.shape[1], 20 * (i + 2)),
-                fontFace=cv.FONT_HERSHEY_SIMPLEX,
-                fontScale=0.5,
-                color=(0, 255, 0),
-                thickness=1,
-                lineType=cv.LINE_AA,
-            )
+            img_text,
+            text="Person "+str(j+1)+" :",
+            org=(frame1.shape[1], (var+1)*20),
+            fontFace=cv.FONT_HERSHEY_SIMPLEX,
+            fontScale=0.5,
+            color=colors[var],
+            thickness=1,
+            lineType=cv.LINE_AA,
+        )
+            var += 1
+            for i in range(len(final)):
+                cv.putText(
+                    img_text,
+                    text=final[i],
+                    org=(frame1.shape[1], 20 * (var + 1)),
+                    fontFace=cv.FONT_HERSHEY_SIMPLEX,
+                    fontScale=0.5,
+                    color=colors[i+j],
+                    thickness=1,
+                    lineType=cv.LINE_AA,
+                )
+                var += 1
         cv.imshow("Frame", img_text)
         # Break the loop on 'q' key press
         if cv.waitKey(20) & 0xFF == ord("q"):
